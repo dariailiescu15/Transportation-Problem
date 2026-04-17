@@ -54,22 +54,29 @@ def format_lista_clean(lista):                                  # formatam vecto
 
 def afiseaza_tabel_complet(X, A, B, baza=None):                 # cream tabelul ca pe tabla: Xij la mijloc, Disponibil in dreapta, Necesar jos
     m, n = len(A), len(B)
+    # construim matricea principala
     df = pd.DataFrame(X, index=[f"A{i+1}" for i in range(m)], columns=[f"B{j+1}" for j in range(n)])
-    df['Disponibil (a_i)'] = A                                  # lipim coloana a_i
-    df.loc['Necesar (b_j)'] = list(B) + [sum(A)]                # lipim linia b_j (inclusiv suma totala la colt)
     
-    def coloreaza_baza(data):                                   # functie pt a colora cu baby pink doar rutele alese
+    # lipim coloana a_i in dreapta
+    df['Disponibil (a_i)'] = A                                  
+    # lipim linia b_j dedesubt (inclusiv suma totala la coltul din dreapta jos)
+    df.loc['Necesar (b_j)'] = list(B) + [sum(A)]                
+    
+    def coloreaza_tabelul(data):                                # functie pt a colora tabelul
         stiler = pd.DataFrame('', index=data.index, columns=data.columns)
+        
+        # 1. coloram cu baby pink doar rutele alese (baza)
         if baza is not None:
             for (i, j) in baza:
                 stiler.iloc[i, j] = 'background-color: #fddde6; font-weight: bold; color: #ff007f;'
-        # coloram putin marginile de cerere si oferta sa arate a tabel matematic
-        stiler.iloc[-1, :] = 'background-color: #ffe6f0; font-weight: bold; color: #ff007f;'
-        stiler.iloc[:, -1] = 'background-color: #ffe6f0; font-weight: bold; color: #ff007f;'
-        stiler.iloc[-1, -1] = 'background-color: #ff007f; color: white; font-weight: bold;'
+                
+        # 2. coloram linia si coloana de restrictii ca sa fie separate de matricea principala
+        stiler.iloc[-1, :] = 'background-color: #ffe6f0; font-weight: bold; color: #ff007f; border-top: 2px solid #ff007f;'
+        stiler.iloc[:, -1] = 'background-color: #ffe6f0; font-weight: bold; color: #ff007f; border-left: 2px solid #ff007f;'
+        stiler.iloc[-1, -1] = 'background-color: #ff007f; color: white; font-weight: bold;' # coltul final
         return stiler
 
-    st.dataframe(df.style.apply(coloreaza_baza, axis=None), use_container_width=True)
+    st.dataframe(df.style.apply(coloreaza_tabelul, axis=None), use_container_width=True)
 
                                                                 # ALGORITMI PROBLEMA TRANSPORTURILOR
 
@@ -185,6 +192,8 @@ with col_liste:
     B_input = st.data_editor(pd.DataFrame(B_default, index=[f"B{j+1}" for j in range(n_dest)], columns=["Cerere"]), use_container_width=True).values.flatten().tolist()
 
 if st.button("🚀 Rezolvă Problema de Transport", type="primary", use_container_width=True):
+    
+    afiseaza_fundite_baby_pink()                                # declansam funditele IMEDIAT cum apasam butonul 🎀
     st.divider()
     
                                                                 # PAS 1: VERIFICARE ECHILIBRU
@@ -208,7 +217,7 @@ if st.button("🚀 Rezolvă Problema de Transport", type="primary", use_containe
         st.error(f"❌ Soluție Degenerată: Avem {v_curent} alocări în loc de {v_max}. S-au adăugat zero-uri artificiale.")
 
     cost_curent = np.sum(X_baza * C_lucru)
-    afiseaza_tabel_complet(X_baza, A_lucru, B_lucru, celule_baza)
+    afiseaza_tabel_complet(X_baza, A_lucru, B_lucru, celule_baza) # afisam cu necesar sub tabel si disp in dreapta
     st.write(f"💰 Costul inițial: $f_0 = {format_clean(cost_curent)}$")
 
                                                                 # PAS 3: ALGORITMUL MODI
@@ -287,12 +296,10 @@ if st.button("🚀 Rezolvă Problema de Transport", type="primary", use_containe
         st.latex(r"X_{ij}(C_{ij} - u_i - v_j) = 0")
         st.success("Verificată pentru decizia optimă.")
 
-                                                                # AFISARE REZULTAT FINAL 
+                                                                # AFISARE REZULTAT FINAL
     st.markdown("---")
     st.markdown("<h3 style='color: #ff007f; text-align: center;'>📦 REZULTAT FINAL 📦</h3>", unsafe_allow_html=True)
     
     afiseaza_tabel_complet(X_baza, A_lucru, B_lucru, celule_baza)
     
     st.markdown(f"<h2 style='color: #ff007f; text-align: center;'>Cost Total Minim: {format_clean(cost_curent)} u.m.</h2>", unsafe_allow_html=True)
-    
-    afiseaza_fundite_baby_pink()                                #  🎀
