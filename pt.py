@@ -19,35 +19,40 @@ st.markdown("""
         0% { transform: translateY(10vh) rotate(0deg); opacity: 1; }
         100% { transform: translateY(-120vh) rotate(360deg); opacity: 0; }
     }
+    /* containerul ocupa 0px pt a nu deranja inaltimea paginii / sa nu mai avem auto-scroll haotic */
+    .bow-container { position: fixed; top: 0; left: 0; width: 0; height: 0; z-index: 9999; pointer-events: none; overflow: visible; }
     .bow {
-        position: fixed; 
-        bottom: -10vh; 
-        z-index: 9999; 
-        pointer-events: none;
-        user-select: none; 
+        position: absolute; 
+        bottom: -110vh; 
         animation-name: floatUp; 
         animation-timing-function: ease-in; 
         animation-iteration-count: 1; 
         animation-fill-mode: forwards;
-        color: #fddde6; /* culoarea baby pink ceruta */
-        text-shadow: 0px 0px 4px #ff007f, 0px 0px 8px #ff007f; /* glow magenta ca sa iasa in evidenta pe fundal alb */
+        color: #fddde6; 
+        text-shadow: 0px 0px 4px #ff007f, 0px 0px 8px #ff007f;
     }
     </style>
 """, unsafe_allow_html=True)                                    # design css pt titlu si fundite
 
-# Placeholder la inceputul paginii pentru animatie (previne scroll-ul automat in jos cand apasam butonul)
-anim_placeholder = st.empty()
-
-def afiseaza_fundite_baby_pink():                               # functie care genereaza 50 de fundite zburatoare
-    bows_html = ""
+def afiseaza_fundite_baby_pink():                               # functie care genereaza 50 de fundite zburatoare 
+    bows_html = "<div class='bow-container'>"
     for _ in range(50):
         left = random.randint(0, 100)
         duration = random.uniform(3.0, 6.0)
         delay = random.uniform(0, 1.5)
         size = random.uniform(1.5, 3.5)
         bows_html += f"<div class='bow' style='left: {left}vw; animation-duration: {duration}s; animation-delay: {delay}s; font-size: {size}rem;'>🎀</div>"
-    # Folosim placeholder-ul de sus pentru a nu deregla pozitia paginii unde este butonul
-    anim_placeholder.markdown(bows_html, unsafe_allow_html=True)
+    bows_html += "</div>"
+    
+    # script javascript ca sa fixam scroll-ul la sectiunea de rezolvare
+    scroll_script = """
+        <script>
+            setTimeout(function() {
+                document.getElementById('start-rezolvare').scrollIntoView({behavior: 'smooth', block: 'start'});
+            }, 100);
+        </script>
+    """
+    st.markdown(bows_html + scroll_script, unsafe_allow_html=True)
 
 def format_clean(val):                                          # curatam numerele de formatul urat np.float64
     if val is None: return "None"
@@ -113,7 +118,7 @@ def coltul_nv(A, B):                                            # pas 2: calcula
         
         if a_temp[i] == 0 and b_temp[j] == 0:                   # tratam DEGENERAREA corect! 
             if i < m - 1 and j < n - 1:
-                i += 1                                          # avansam pe linie, dar lasam coloana, rezultand un zero pe viitor pt a mentine baza unita
+                i += 1                                          # avansam pe linie, dar lasam coloana pentru un '0' bazic
             else:
                 i += 1; j += 1
         elif a_temp[i] == 0: 
@@ -126,7 +131,7 @@ def calculeaza_potentiale(C, baza, m, n):                       # metoda potenti
     u, v = [None] * m, [None] * n
     u[0] = 0                                                    # sistem nedeterminat -> fixam intotdeauna u1=0
     
-    schimbare = True                                            # flag de siguranta pt bucle infinite (daca graful s-ar rupe accidental)
+    schimbare = True                                            # flag de siguranta pt bucle infinite
     while (None in u or None in v) and schimbare:
         schimbare = False
         for (i, j) in baza:
@@ -137,8 +142,7 @@ def calculeaza_potentiale(C, baza, m, n):                       # metoda potenti
                 u[i] = C[i, j] - v[j]
                 schimbare = True
                 
-    # siguranta in caz de degenerare severa
-    for i in range(m):
+    for i in range(m):                                          # siguranta in caz de degenerare severa
         if u[i] is None: u[i] = 0
     for j in range(n):
         if v[j] is None: v[j] = 0
@@ -154,7 +158,7 @@ def calculeaza_delta(C, u, v, m, n):                            # calculam costu
             Delta[i, j] = C[i, j] - C_tilde[i, j]               # ecartul care ne arata daca am ajuns la optim
     return C_tilde, Delta
 
-def gaseste_ciclu(celule_baza, start):                          # DFS imbunatatit: cautam poligon DOAR alternand orizontal/vertical
+def gaseste_ciclu(celule_baza, start):                          # cautam traseul in forma de poligon (+, -, +, -)
     def cauta_drum(nod_curent, drum, e_orizontal):
         for urmator in celule_baza:
             if urmator != nod_curent:
@@ -169,7 +173,6 @@ def gaseste_ciclu(celule_baza, start):                          # DFS imbunatati
                         rez = cauta_drum(urmator, drum + [urmator], True)
                         if rez: return rez
         return None
-    # poligonul poate pleca pe linie sau pe coloana
     return cauta_drum(start, [start], True) or cauta_drum(start, [start], False)
 
                                                                 # INTERFATA UI STREAMLIT
@@ -204,17 +207,32 @@ rows = [f"A{i+1}" for i in range(m_surse)] + ["Cerere (b_j)"]
 
 df_input_initial = pd.DataFrame(index=rows, columns=cols)       # cream structura tabelului
 
-for i in range(m_surse):                                        # completam cu valori implicite Cij si ai
+                                                                # Setam datele default DIN CURS (Examen) 
+C_curs = [[4, 5, 2, 3], [1, 2, 1, 3], [4, 4, 5, 1]]
+A_curs = [30, 27, 43]
+B_curs = [25, 35, 18, 22]
+
+for i in range(m_surse):                                        # completam cu valori (fie curs, fie random pt alte dim.)
     for j in range(n_dest):
-        df_input_initial.iloc[i, j] = random.randint(1, 9)
-    df_input_initial.iloc[i, -1] = 20                           # Oferta implicita
+        if m_surse == 3 and n_dest == 4:
+            df_input_initial.iloc[i, j] = C_curs[i][j]
+        else:
+            df_input_initial.iloc[i, j] = random.randint(1, 9)
+            
+    if m_surse == 3 and n_dest == 4:
+        df_input_initial.iloc[i, -1] = A_curs[i]
+    else:
+        df_input_initial.iloc[i, -1] = 20
     
 for j in range(n_dest):
-    df_input_initial.iloc[-1, j] = 15                           # Cererea implicita
-    
-df_input_initial.iloc[-1, -1] = None                            # Coltul din dreapta jos (il lasam liber/vizual)
+    if m_surse == 3 and n_dest == 4:
+        df_input_initial.iloc[-1, j] = B_curs[j]
+    else:
+        df_input_initial.iloc[-1, j] = 15
+        
+df_input_initial.iloc[-1, -1] = None                            # Coltul din dreapta jos ramane gol (vizual)
 
-st.write("**Introduceți Costurile Unitare ($C_{ij}$), Oferta și Cererea în tabelul de mai jos:**")
+st.info("📌 **Am preîncărcat problema standard de la curs (Cazul Examen). Puteți modifica valorile în tabel.**")
 edited_df = st.data_editor(df_input_initial, use_container_width=True) # afisam matricea combinata
 
 C_input = edited_df.iloc[:-1, :-1].values.astype(float)         # extragem Costurile din mijloc
@@ -223,7 +241,8 @@ B_input = edited_df.iloc[-1, :-1].values.astype(float).tolist() # extragem Cerer
 
 if st.button("🚀 Rezolvă Problema de Transport", type="primary", use_container_width=True):
     
-    afiseaza_fundite_baby_pink()                                # declansam funditele in placeholder-ul de la top 🎀
+    afiseaza_fundite_baby_pink()                                # declansam funditele si scroll-ul elegant 🎀
+    st.markdown("<div id='start-rezolvare'></div>", unsafe_allow_html=True) # Ancoră pentru focus
     st.divider()
     
                                                                 # PAS 1: VERIFICARE ECHILIBRU
