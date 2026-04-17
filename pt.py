@@ -35,6 +35,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)                                    # design css pt titlu si fundite
 
+# Placeholder la inceputul paginii pentru animatie (previne scroll-ul automat in jos cand apasam butonul)
+anim_placeholder = st.empty()
+
 def afiseaza_fundite_baby_pink():                               # functie care genereaza 50 de fundite zburatoare
     bows_html = ""
     for _ in range(50):
@@ -43,7 +46,8 @@ def afiseaza_fundite_baby_pink():                               # functie care g
         delay = random.uniform(0, 1.5)
         size = random.uniform(1.5, 3.5)
         bows_html += f"<div class='bow' style='left: {left}vw; animation-duration: {duration}s; animation-delay: {delay}s; font-size: {size}rem;'>🎀</div>"
-    st.markdown(bows_html, unsafe_allow_html=True)
+    # Folosim placeholder-ul de sus pentru a nu deregla pozitia paginii unde este butonul
+    anim_placeholder.markdown(bows_html, unsafe_allow_html=True)
 
 def format_clean(val):                                          # curatam numerele de formatul urat np.float64
     if val is None: return "None"
@@ -107,23 +111,38 @@ def coltul_nv(A, B):                                            # pas 2: calcula
         a_temp[i] -= minim
         b_temp[j] -= minim
         
-        if a_temp[i] == 0 and b_temp[j] == 0:                   # tratam degenerarea ca sa pastram numarul corect de celule (m+n-1)
-            if i != m - 1 or j != n - 1:
-                j += 1
+        if a_temp[i] == 0 and b_temp[j] == 0:                   # tratam DEGENERAREA corect! 
+            if i < m - 1 and j < n - 1:
+                i += 1                                          # avansam pe linie, dar lasam coloana, rezultand un zero pe viitor pt a mentine baza unita
             else:
                 i += 1; j += 1
-        elif a_temp[i] == 0: i += 1
-        else: j += 1
+        elif a_temp[i] == 0: 
+            i += 1
+        else: 
+            j += 1
     return X, baza
 
 def calculeaza_potentiale(C, baza, m, n):                       # metoda potentialelor ui + vj = cij pentru celulele din baza
     u, v = [None] * m, [None] * n
     u[0] = 0                                                    # sistem nedeterminat -> fixam intotdeauna u1=0
     
-    while None in u or None in v:
+    schimbare = True                                            # flag de siguranta pt bucle infinite (daca graful s-ar rupe accidental)
+    while (None in u or None in v) and schimbare:
+        schimbare = False
         for (i, j) in baza:
-            if u[i] is not None and v[j] is None: v[j] = C[i, j] - u[i]
-            elif v[j] is not None and u[i] is None: u[i] = C[i, j] - v[j]
+            if u[i] is not None and v[j] is None: 
+                v[j] = C[i, j] - u[i]
+                schimbare = True
+            elif v[j] is not None and u[i] is None: 
+                u[i] = C[i, j] - v[j]
+                schimbare = True
+                
+    # siguranta in caz de degenerare severa
+    for i in range(m):
+        if u[i] is None: u[i] = 0
+    for j in range(n):
+        if v[j] is None: v[j] = 0
+        
     return u, v
 
 def calculeaza_delta(C, u, v, m, n):                            # calculam costurile indirecte
@@ -135,20 +154,23 @@ def calculeaza_delta(C, u, v, m, n):                            # calculam costu
             Delta[i, j] = C[i, j] - C_tilde[i, j]               # ecartul care ne arata daca am ajuns la optim
     return C_tilde, Delta
 
-def gaseste_ciclu(celule_valide, start):                        # cautam traseul in forma de poligon (+, -, +, -)
-    def dfs(curent, drum, e_orizontal):
-        if len(drum) >= 4 and curent == start: return drum[:-1] 
-        for nod in celule_valide:
-            if nod not in drum or (nod == start and len(drum) >= 4):
-                acelasi_rand, aceeasi_col = (nod[0] == curent[0]), (nod[1] == curent[1])
-                if e_orizontal and acelasi_rand and not aceeasi_col:
-                    rez = dfs(nod, drum + [nod], False)
-                    if rez: return rez
-                elif not e_orizontal and aceeasi_col and not acelasi_rand:
-                    rez = dfs(nod, drum + [nod], True)
-                    if rez: return rez
+def gaseste_ciclu(celule_baza, start):                          # DFS imbunatatit: cautam poligon DOAR alternand orizontal/vertical
+    def cauta_drum(nod_curent, drum, e_orizontal):
+        for urmator in celule_baza:
+            if urmator != nod_curent:
+                if e_orizontal and urmator[0] == nod_curent[0]: # cautam pe aceeasi linie
+                    if urmator == start and len(drum) >= 4: return drum
+                    if urmator not in drum:
+                        rez = cauta_drum(urmator, drum + [urmator], False)
+                        if rez: return rez
+                elif not e_orizontal and urmator[1] == nod_curent[1]: # cautam pe aceeasi coloana
+                    if urmator == start and len(drum) >= 4: return drum
+                    if urmator not in drum:
+                        rez = cauta_drum(urmator, drum + [urmator], True)
+                        if rez: return rez
         return None
-    return dfs(start, [start], True) or dfs(start, [start], False)
+    # poligonul poate pleca pe linie sau pe coloana
+    return cauta_drum(start, [start], True) or cauta_drum(start, [start], False)
 
                                                                 # INTERFATA UI STREAMLIT
 
@@ -176,24 +198,32 @@ n_dest = st.sidebar.number_input("Beneficiari (B_j)", 2, 6, 4)
 
 st.markdown("<h3 style='color: #ff007f;'>1. Datele Problemei</h3>", unsafe_allow_html=True)
 
-col_mat, col_liste = st.columns([2, 1])                         # preluam datele de pe ecran
-with col_mat:
-    st.write("**Matricea Costurilor Unitare ($C_{ij}$):**")
-    C_default = np.random.randint(1, 10, size=(m_surse, n_dest))
-    C_input = st.data_editor(pd.DataFrame(C_default, index=[f"A{i+1}" for i in range(m_surse)], columns=[f"B{j+1}" for j in range(n_dest)]), use_container_width=True).values
+# TABEL COMBINAT (Cij in mijloc, Ofertă pe dreapta, Cerere pe ultimul rând)
+cols = [f"B{j+1}" for j in range(n_dest)] + ["Oferta (a_i)"]
+rows = [f"A{i+1}" for i in range(m_surse)] + ["Cerere (b_j)"]
 
-with col_liste:
-    A_default = np.pad(np.array([20, 30, 20][:m_surse]), (0, max(0, m_surse - 3)), constant_values=20)
-    st.write("**Disponibil (Oferta $a_i$):**")
-    A_input = st.data_editor(pd.DataFrame(A_default, index=[f"A{i+1}" for i in range(m_surse)], columns=["Oferta"]), use_container_width=True).values.flatten().tolist()
+df_input_initial = pd.DataFrame(index=rows, columns=cols)       # cream structura tabelului
+
+for i in range(m_surse):                                        # completam cu valori implicite Cij si ai
+    for j in range(n_dest):
+        df_input_initial.iloc[i, j] = random.randint(1, 9)
+    df_input_initial.iloc[i, -1] = 20                           # Oferta implicita
     
-    B_default = np.pad(np.array([10, 20, 20, 20][:n_dest]), (0, max(0, n_dest - 4)), constant_values=15)
-    st.write("**Necesar (Cererea $b_j$):**")
-    B_input = st.data_editor(pd.DataFrame(B_default, index=[f"B{j+1}" for j in range(n_dest)], columns=["Cerere"]), use_container_width=True).values.flatten().tolist()
+for j in range(n_dest):
+    df_input_initial.iloc[-1, j] = 15                           # Cererea implicita
+    
+df_input_initial.iloc[-1, -1] = None                            # Coltul din dreapta jos (il lasam liber/vizual)
+
+st.write("**Introduceți Costurile Unitare ($C_{ij}$), Oferta și Cererea în tabelul de mai jos:**")
+edited_df = st.data_editor(df_input_initial, use_container_width=True) # afisam matricea combinata
+
+C_input = edited_df.iloc[:-1, :-1].values.astype(float)         # extragem Costurile din mijloc
+A_input = edited_df.iloc[:-1, -1].values.astype(float).tolist() # extragem Oferta de pe coloana dreapta
+B_input = edited_df.iloc[-1, :-1].values.astype(float).tolist() # extragem Cererea de pe linia de jos
 
 if st.button("🚀 Rezolvă Problema de Transport", type="primary", use_container_width=True):
     
-    afiseaza_fundite_baby_pink()                                # declansam funditele IMEDIAT cum apasam butonul 🎀
+    afiseaza_fundite_baby_pink()                                # declansam funditele in placeholder-ul de la top 🎀
     st.divider()
     
                                                                 # PAS 1: VERIFICARE ECHILIBRU
@@ -234,7 +264,7 @@ if st.button("🚀 Rezolvă Problema de Transport", type="primary", use_containe
         este_optim, min_delta, intrata = True, 0, None
         for i in range(m):
             for j in range(n):
-                if (i, j) not in celule_baza and Delta[i, j] < min_delta: # gasim varfurile poligonului care reduc cel mai mult costul
+                if (i, j) not in celule_baza and Delta[i, j] < min_delta: # gasim celula care scade cel mai mult costul
                     min_delta = Delta[i, j]
                     intrata = (i, j)
                     este_optim = False
@@ -257,15 +287,16 @@ if st.button("🚀 Rezolvă Problema de Transport", type="primary", use_containe
         circuit = gaseste_ciclu(celule_baza + [intrata], intrata)
         celule_minus = circuit[1::2]
         theta = min([X_baza[r, c] for (r, c) in celule_minus])  # valoarea cu care pivotam (theta)
-        iesita = celule_minus[[X_baza[r, c] for (r, c) in celule_minus].index(theta)]
+        IESIRI_POSIBILE = [(r, c) for (r, c) in celule_minus if X_baza[r, c] == theta]
+        iesita = IESIRI_POSIBILE[0]                             # daca este egalitate extragem doar una pt a mentine m+n-1
         
         st.write(f"🔄 **Circuit $(+, -, +, -)$:** {[(r+1, c+1) for r,c in circuit]}")
         st.latex(rf"\theta = \min X_{{ij}}^{{-}} = {format_clean(theta)} \quad \Rightarrow \text{{Celula ieșită: }} ({iesita[0]+1}, {iesita[1]+1})")
         
-                                                                # VERIFICARE COST (cu formula f1 = f0 + delta * theta din curs)
+                                                                # VERIFICARE COST FORMULA TEORETICA
+        cost_nou = cost_curent + min_delta * theta
         st.write("📈 **Verificarea evoluției costului (Formula pag. 17):**")
-        st.latex(rf"f_{{{iteratie}}} = f_{{{iteratie-1}}} + \Delta \cdot \theta = {format_clean(cost_curent)} + ({format_clean(min_delta)}) \cdot {format_clean(theta)} = {format_clean(cost_curent + min_delta * theta)}")
-        cost_curent = cost_curent + min_delta * theta
+        st.latex(rf"f_{{{iteratie}}} = f_{{{iteratie-1}}} + \Delta \cdot \theta = {format_clean(cost_curent)} + ({format_clean(min_delta)}) \cdot {format_clean(theta)} = {format_clean(cost_nou)}")
         
         semn = 1
         for (r, c) in circuit:                                  # pivotam real in matrice
@@ -274,6 +305,8 @@ if st.button("🚀 Rezolvă Problema de Transport", type="primary", use_containe
             
         celule_baza.remove(iesita)                              # scoatem ce a dat zero
         celule_baza.append(intrata)                             # adaugam ce a intrat in baza
+        
+        cost_curent = np.sum(X_baza * C_lucru)                  # recalculam costul din matrice pt siguranta 100%
         st.divider()
         iteratie += 1
 
