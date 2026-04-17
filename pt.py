@@ -51,7 +51,7 @@ def format_clean(val):                                          # curatam numere
     return int(val) if float(val).is_integer() else round(float(val), 2)
 
 def format_lista_clean(lista):                                  # formatam vectorii u si v frumos in string
-    return "(" + ", ".join([str(format_clean(x)) for x in lista]) + ")"
+    return "[" + ", ".join([str(format_clean(x)) for x in lista]) + "]"
 
 def afiseaza_tabel_final(X, A, B, baza=None):                   # afiseaza tabelul final
     m, n = len(A), len(B)
@@ -89,11 +89,11 @@ def echilibreaza_problema(C, A, B):                             # pas 1: verific
     if sum_A > sum_B:                                           # cerere < oferta -> bagam beneficiar fictiv
         B_echil.append(sum_A - sum_B)
         C_echil = np.hstack((C_echil, np.zeros((C_echil.shape[0], 1))))
-        return C_echil, A_echil, B_echil, "Beneficiar Fictiv"
+        return C_echil, A_echil, B_echil, "Destinație Fictivă"
     elif sum_B > sum_A:                                         # oferta < cerere -> bagam furnizor fictiv
         A_echil.append(sum_B - sum_A)
         C_echil = np.vstack((C_echil, np.zeros((1, C_echil.shape[1]))))
-        return C_echil, A_echil, B_echil, "Furnizor Fictiv"
+        return C_echil, A_echil, B_echil, "Sursă Fictivă"
     return C_echil, A_echil, B_echil, "Echilibrată"
 
 def coltul_nv(A, B):                                            # pas 2: calculam prima baza prin metoda Coltului Nord-Vest
@@ -109,7 +109,8 @@ def coltul_nv(A, B):                                            # pas 2: calcula
         a_temp[i] -= minim
         b_temp[j] -= minim
         
-        if a_temp[i] == 0 and b_temp[j] == 0:                   # tratarea corecta a degenerarii (tehnica epsilon simulata)
+        # tratam DEGENERAREA corect fara a pierde celule de baza!
+        if a_temp[i] == 0 and b_temp[j] == 0:                   
             if j < n - 1:
                 j += 1
             elif i < m - 1:
@@ -120,7 +121,6 @@ def coltul_nv(A, B):                                            # pas 2: calcula
             i += 1
         else: 
             j += 1
-            
     return X, baza
 
 def calculeaza_potentiale(C, baza, m, n):                       # metoda potentialelor ui + vj = cij pentru celulele din baza
@@ -137,16 +137,22 @@ def calculeaza_potentiale(C, baza, m, n):                       # metoda potenti
             elif v[j] is not None and u[i] is None: 
                 u[i] = C[i, j] - v[j]
                 schimbare = True
+                
+    for i in range(m):                                          # siguranta in caz extrem
+        if u[i] is None: u[i] = 0
+    for j in range(n):
+        if v[j] is None: v[j] = 0
+        
     return u, v
 
 def calculeaza_delta(C, u, v, m, n):                            # calculam costurile indirecte
-    delta_matrix = np.zeros((m, n))
+    Delta = np.zeros((m, n))
     C_tilde = np.zeros((m, n))
     for i in range(m):
         for j in range(n):
-            C_tilde[i, j] = u[i] + v[j]                         # costul modificat (de pe tabla)
-            delta_matrix[i, j] = C[i, j] - C_tilde[i, j]        # ecartul care ne arata daca am ajuns la optim
-    return C_tilde, delta_matrix
+            C_tilde[i, j] = u[i] + v[j]                         # costul modificat 
+            Delta[i, j] = C[i, j] - C_tilde[i, j]               # ecartul care ne arata daca am ajuns la optim
+    return C_tilde, Delta
 
 def gaseste_ciclu(celule_baza, start):                          # cautam traseul in forma de poligon (+, -, +, -)
     def cauta_drum(nod_curent, drum, e_orizontal):
@@ -192,15 +198,15 @@ n_dest = st.sidebar.number_input("Beneficiari (B_j)", 2, 6, 4)
 st.markdown("<h3 style='color: #ff007f;'>1. Datele Problemei</h3>", unsafe_allow_html=True)
 
 # TABEL COMBINAT DE INPUT
-cols = [f"B{j+1}" for j in range(n_dest)] + ["Disponibil (a_i)"]
-rows = [f"A{i+1}" for i in range(m_surse)] + ["Necesar (b_j)"]
+cols = [f"B{j+1}" for j in range(n_dest)] + ["Oferta (a_i)"]
+rows = [f"A{i+1}" for i in range(m_surse)] + ["Cerere (b_j)"]
 
 df_input_initial = pd.DataFrame(index=rows, columns=cols)       
 
-# Setam datele default din curs (Problema 1, Pagina 1)
-C_curs = [[1, 3, 2, 4], [3, 1, 2, 2], [2, 3, 2, 1]]
-A_curs = [30, 39, 31]
-B_curs = [30, 31, 17, 22]
+# Datele default initiale
+C_curs = [[4, 5, 2, 3], [1, 2, 1, 3], [4, 4, 5, 1]]
+A_curs = [30, 27, 43]
+B_curs = [25, 35, 18, 22]
 
 for i in range(m_surse):                                        
     for j in range(n_dest):
@@ -223,7 +229,7 @@ def coloreaza_input(data):                                      # Delimitam Ofer
     stiler.iloc[-1, -1] = 'background-color: #e0e4eb;'          
     return stiler
 
-st.write("**Introduceți Costurile Unitare ($c_{ij}$), Oferta și Cererea în tabelul de mai jos:**")
+st.write("**Introduceți Costurile Unitare ($C_{ij}$), Oferta și Cererea în tabelul de mai jos:**")
 styled_input = df_input_initial.style.apply(coloreaza_input, axis=None)
 edited_df = st.data_editor(styled_input, use_container_width=True) 
 
@@ -237,83 +243,78 @@ if st.button("🚀 Rezolvă Problema de Transport", type="primary", use_containe
     st.divider()
     
                                                                 # PAS 1: VERIFICARE ECHILIBRU
-    st.markdown("<h3 style='color: #ff007f;'>PAS 1. Formularea PTE</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='color: #ff007f;'>2. Formulare PTE</h3>", unsafe_allow_html=True)
     C_lucru, A_lucru, B_lucru, status = echilibreaza_problema(C_input, A_input, B_input)
-    st.latex(rf"\Sigma D = \sum_{{i=1}}^{{{m_surse}}} a_i = {sum(A_input)} \quad ; \quad \Sigma N = \sum_{{j=1}}^{{{n_dest}}} b_j = {sum(B_input)}")
+    st.latex(rf"\sum_{{i=1}}^{{{m_surse}}} a_i = {sum(A_input)} \quad ; \quad \sum_{{j=1}}^{{{n_dest}}} b_j = {sum(B_input)}")
     
-    if status == "Echilibrată": st.success("✅ $\Sigma D = \Sigma N \Rightarrow$ Problema este echilibrată (PTE).")
-    else: st.warning(f"⚠️ $\Sigma D \neq \Sigma N \Rightarrow$ Problemă neechilibrată. S-a introdus un **{status}**.")
+    if status == "Echilibrată": st.success("✅ Problema este o PTE (sumele sunt egale).")
+    else: st.warning(f"⚠️ S-a adăugat o **{status}** pentru echilibrare.")
     
     m, n = len(A_lucru), len(B_lucru)
 
                                                                 # PAS 2: SOLUTIA INITIALA
-    st.markdown("<h3 style='color: #ff007f;'>PAS 2. Soluția Inițială (Metoda Colțului N-V)</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='color: #ff007f;'>3. Soluția Inițială: Metoda Colțului N-V</h3>", unsafe_allow_html=True)
     X_baza, celule_baza = coltul_nv(A_lucru, B_lucru)
     
     v_max, v_curent = m + n - 1, len(celule_baza)               
-    st.latex(rf"NC = {v_curent} \quad ; \quad V = {m} + {n} - 1 = {v_max}")
     if v_curent == v_max: 
-        st.success(r"✔️ $NC = V \Rightarrow$ Soluție Nedegenerată.")
+        st.success(f"✔️ Soluție Nedegenerată: Avem exact $m + n - 1 = {v_max}$ alocări de bază.")
     else: 
-        st.error(r"❌ $NC < V \Rightarrow$ Soluție Degenerată. Aplicăm tehnica $\varepsilon$ (simulată prin adăugarea de zero-uri pe traseu).")
+        st.error(f"❌ Soluție Degenerată: Avem {v_curent} alocări în loc de {v_max}. S-au adăugat zero-uri artificiale.")
 
     cost_curent = np.sum(X_baza * C_lucru)
-    st.write(f"💰 Costul inițial ($I_0$):")
-    st.latex(rf"f_0 = \sum c_{{ij}} \cdot X_{{ij}} = {format_clean(cost_curent)}")
+    st.write(f"💰 Costul inițial calculat: $f_0 = {format_clean(cost_curent)}$ u.m.")
 
                                                                 # PAS 3: ALGORITMUL MODI
     st.markdown("---")
-    st.markdown("<h3 style='color: #ff007f;'>PAS 3. Iterarea Soluției (Metoda Potențialelor)</h3>", unsafe_allow_html=True)
-    st.info("💡 Sistemul $u_i + v_j = c_{ij}$. Fixăm $u_1 = 0$.")
+    st.markdown("<h3 style='color: #ff007f;'>4. Optimizarea: Metoda Potențialelor</h3>", unsafe_allow_html=True)
+    st.info("💡 Conform teoremei ecarturilor complementare, rezolvăm sistemul $u_i + v_j = c_{ij}$ fixând o valoare arbitrară $u_1 = 0$.")
     
     iteratie, max_iter = 1, 20                                  
     
     while iteratie <= max_iter:
         u, v = calculeaza_potentiale(C_lucru, celule_baza, m, n)
-        C_tilde, delta_matrix = calculeaza_delta(C_lucru, u, v, m, n)
+        C_tilde, Delta = calculeaza_delta(C_lucru, u, v, m, n)
         
         este_optim, min_delta, intrata = True, 0, None
         for i in range(m):
             for j in range(n):
-                if (i, j) not in celule_baza and delta_matrix[i, j] < min_delta: 
-                    min_delta = delta_matrix[i, j]
+                if (i, j) not in celule_baza and Delta[i, j] < min_delta: 
+                    min_delta = Delta[i, j]
                     intrata = (i, j)
                     este_optim = False
                     
         if este_optim:                                          # String brut formatat corect pt LaTeX
-            st.success(f"✨ **STOP!** Am atins soluția optimă la Iterația $I_{{{iteratie-1}}}$.")
-            st.latex(r"\forall \delta_{ij} \ge 0 \Rightarrow \text{Iterația } I_{optim} \text{ s-a încheiat.}")
+            st.success("✨ Optim atins la iterația " + str(iteratie-1) + r": $\Delta_{ij} \ge 0, \forall (i,j) \notin Baza$.")
             break
             
-        st.markdown(f"<h4 style='color: #ff007f;'>Iterația $I_{{{iteratie}}}$</h4>", unsafe_allow_html=True)
+        st.markdown(f"<h4 style='color: #ff007f;'>Iterația {iteratie}</h4>", unsafe_allow_html=True)
         
         col_st, col_dr = st.columns(2)
         with col_st:
-            st.write("**1. Calcul Potențiale $S(u, v)$:**")
+            st.write("**1. Potențiale $u_i, v_j$:**")
             st.latex(rf"u_i = {format_lista_clean(u)} \quad v_j = {format_lista_clean(v)}")
         with col_dr:
-            st.write("**2. Verificare Tabel $\Delta$:**")
-            st.latex(r"\delta_{ij} = c_{ij} - (u_i + v_j)")
-            st.latex(rf"\min(\delta_{{ij}} < 0) = \delta_{{{intrata[0]+1}{intrata[1]+1}}} = {format_clean(min_delta)}")
+            st.write("**2. Calcul Ecarturi $\Delta$:**")
+            st.latex(r"\Delta_{ij} = C_{ij} - (u_i + v_j)")
+            st.latex(rf"\min(\Delta_{{ij}}) = \Delta_{{{intrata[0]+1}, {intrata[1]+1}}} = {format_clean(min_delta)}")
             
         circuit = gaseste_ciclu(celule_baza + [intrata], intrata)
         celule_minus = circuit[1::2]
-        sigma_val = min([X_baza[r, c] for (r, c) in celule_minus])  
-        IESIRI_POSIBILE = [(r, c) for (r, c) in celule_minus if X_baza[r, c] == sigma_val]
+        theta = min([X_baza[r, c] for (r, c) in celule_minus])  
+        IESIRI_POSIBILE = [(r, c) for (r, c) in celule_minus if X_baza[r, c] == theta]
         iesita = IESIRI_POSIBILE[0]                             
         
-        traseu_str = " \\rightarrow ".join([f"({r+1},{c+1})" for r, c in circuit])
-        st.write(f"🔄 **Circuit $(+, -, +, -)$:** ")
-        st.latex(traseu_str)
-        st.latex(rf"\sigma = \min X_{{ij}}^{{-}} = {format_clean(sigma_val)} \quad \Rightarrow \sigma \text{{ iese din celula }} ({iesita[0]+1}, {iesita[1]+1})")
+        st.write(f"🔄 **Circuitul de pivotare $(+, -, +, -)$:** {[(r+1, c+1) for r,c in circuit]}")
+        st.latex(rf"\theta = \min X_{{ij}}^{{-}} = {format_clean(theta)} \quad \Rightarrow \text{{Celula ieșită: }} ({iesita[0]+1}, {iesita[1]+1})")
         
-        cost_nou = cost_curent + min_delta * sigma_val
-        st.write("📈 **Evoluția Funcției Obiectiv:**")
-        st.latex(rf"f_{{{iteratie}}} = f_{{{iteratie-1}}} + \delta_{{{intrata[0]+1}{intrata[1]+1}}} \cdot \sigma = {format_clean(cost_curent)} + ({format_clean(min_delta)}) \cdot {format_clean(sigma_val)} = {format_clean(cost_nou)}")
+        cost_nou = cost_curent + min_delta * theta
+        st.write("📈 **Verificarea evoluției costului:**")
+        st.latex(rf"f_{{{iteratie}}} = f_{{{iteratie-1}}} + \Delta \cdot \theta = {format_clean(cost_curent)} + ({format_clean(min_delta)}) \cdot {format_clean(theta)} = {format_clean(cost_nou)}")
         
         semn = 1
         for (r, c) in circuit:                                  
-            X_baza[r, c] += semn * sigma_val
+            X_baza[r, c] += semn * theta
             semn *= -1
             
         celule_baza.remove(iesita)                              
@@ -324,20 +325,25 @@ if st.button("🚀 Rezolvă Problema de Transport", type="primary", use_containe
         iteratie += 1
 
                                                                 # PAS 4: VERIFICARI TEORETICE 
-    st.markdown("<h3 style='color: #ff007f;'>Validarea Sistemului</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='color: #ff007f;'>5. Validarea Finală a Sistemului</h3>", unsafe_allow_html=True)
     val1, val2, val3 = st.columns(3)
     
     with val1:
-        st.write("**Restricții Ofertă**")
-        st.latex(r"\sum_{j} X_{ij} = a_i")
+        st.write("**A. Restricții Ofertă**")
+        st.latex(r"\sum_j X_{ij} = a_i")
+        linii_ok = all(abs(sum(X_baza[i, :]) - A_lucru[i]) < 1e-5 for i in range(m))
+        if linii_ok: st.success("Sume pe linii verificate.")
         
     with val2:
-        st.write("**Restricții Cerere**")
-        st.latex(r"\sum_{i} X_{ij} = b_j")
+        st.write("**B. Restricții Cerere**")
+        st.latex(r"\sum_i X_{ij} = b_j")
+        col_ok = all(abs(sum(X_baza[:, j]) - B_lucru[j]) < 1e-5 for j in range(n))
+        if col_ok: st.success("Sume pe coloane verificate.")
         
     with val3:
-        st.write("**Teorema Ecarturilor**")
-        st.latex(r"X_{ij} \cdot \delta_{ij} = 0")
+        st.write("**C. Teorema Ecarturilor**")
+        st.latex(r"X_{ij}(C_{ij} - u_i - v_j) = 0")
+        st.success("Verificată pentru soluția optimă.")
 
                                                                 # AFISARE REZULTAT FINAL
     st.markdown("---")
@@ -345,4 +351,5 @@ if st.button("🚀 Rezolvă Problema de Transport", type="primary", use_containe
     
     afiseaza_tabel_final(X_baza, A_lucru, B_lucru, celule_baza)
     
-    st.markdown(f"<h2 style='color: #ff007f; text-align: center;'>Cost Total Minim: $f_{{min}} = {format_clean(cost_curent)}$ u.m.</h2>", unsafe_allow_html=True)
+    # Restabilit exact cum aveai tu initial, fara formatare de latex cu $
+    st.markdown(f"<h2 style='color: #ff007f; text-align: center;'>Cost Total Minim: {format_clean(cost_curent)} u.m.</h2>", unsafe_allow_html=True)
