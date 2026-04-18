@@ -187,45 +187,64 @@ n_dest = st.sidebar.number_input("Beneficiari (B_j)", 2, 6, 4)
 
 st.markdown("<h3 style='color: #ff007f;'>📝 Datele Problemei</h3>", unsafe_allow_html=True)
 
-cols = [f"B{j+1}" for j in range(n_dest)] + ["Oferta (a_i)"]
-rows = [f"A{i+1}" for i in range(m_surse)] + ["Cerere (b_j)"]
-df_input_initial = pd.DataFrame(index=rows, columns=cols)       
+# ==============================================================================
+# TABEL DE INTRARE (Salvat in memoria aplicatiei ca sa nu se mai reseteze la editare)
+# ==============================================================================
+def genereaza_date_initiale(m, n):
+    cols = [f"B{j+1}" for j in range(n)] + ["Oferta (a_i)"]
+    rows = [f"A{i+1}" for i in range(m)] + ["Cerere (b_j)"]
+    # FORTAM tabelul sa fie format din cifre (float), ca sa nu ne mai blocheze editarea
+    df = pd.DataFrame(index=rows, columns=cols, dtype=float)       
 
-# Pun datele initiale fix din problema noastra de la seminar (Ex 1)
-C_curs = [[1, 3, 2, 4], [3, 1, 2, 2], [2, 3, 2, 1]]
-A_curs = [30, 39, 21]
-B_curs = [25, 20, 30, 15]
+    # Datele noastre initiale din Ex 1
+    C_curs = [[1, 3, 2, 4], [3, 1, 2, 2], [2, 3, 2, 1]]
+    A_curs = [30, 39, 21]
+    B_curs = [25, 20, 30, 15]
 
-# Completez tabelul in cod ca sa nu il scriu mereu de mana cand dau refresh
-for i in range(m_surse):                                        
-    for j in range(n_dest):
-        if m_surse == 3 and n_dest == 4: df_input_initial.iloc[i, j] = C_curs[i][j]
-        else: df_input_initial.iloc[i, j] = random.randint(1, 9)
-            
-    if m_surse == 3 and n_dest == 4: df_input_initial.iloc[i, -1] = A_curs[i]
-    else: df_input_initial.iloc[i, -1] = 20
-    
-for j in range(n_dest):
-    if m_surse == 3 and n_dest == 4: df_input_initial.iloc[-1, j] = B_curs[j]
-    else: df_input_initial.iloc[-1, j] = 15
+    for i in range(m):                                        
+        for j in range(n):
+            if m == 3 and n == 4: df.iloc[i, j] = C_curs[i][j]
+            else: df.iloc[i, j] = random.randint(1, 9)
+                
+        if m == 3 and n == 4: df.iloc[i, -1] = A_curs[i]
+        else: df.iloc[i, -1] = 20
         
-df_input_initial.iloc[-1, -1] = None                            
+    for j in range(n):
+        if m == 3 and n == 4: df.iloc[-1, j] = B_curs[j]
+        else: df.iloc[-1, j] = 15
+            
+    # In loc de None, punem 0.0 ca sa pastram coloana matematica
+    df.iloc[-1, -1] = 0.0                            
+    return df
+
+# AICI E SECRETUL: Salvam tabelul in session_state (memoria interna)
+# Se va schimba DOAR DACA utilizatorul modifica numarul de furnizori/beneficiari din meniul stanga
+if "tabel_date" not in st.session_state or st.session_state.get("m_vechi") != m_surse or st.session_state.get("n_vechi") != n_dest:
+    st.session_state.tabel_date = genereaza_date_initiale(m_surse, n_dest)
+    st.session_state.m_vechi = m_surse
+    st.session_state.n_vechi = n_dest
 
 def coloreaza_input(data):                                      # gri pt linia de jos si coloana din dreapta
     stiler = pd.DataFrame('', index=data.index, columns=data.columns)
     stiler.iloc[-1, :] = 'background-color: #f0f2f6; font-weight: bold; border-top: 2px solid #555;'
     stiler.iloc[:, -1] = 'background-color: #f0f2f6; font-weight: bold; border-left: 2px solid #555;'
-    stiler.iloc[-1, -1] = 'background-color: #e0e4eb;'          
+    # Smecherie vizuala: facem textul din colt de aceeasi culoare cu fundalul ca sa ascundem acel 0.0
+    stiler.iloc[-1, -1] = 'background-color: #e0e4eb; color: #e0e4eb;'          
     return stiler
 
 st.write("**Introduceți Costurile Unitare ($c_{ij}$), Oferta și Cererea:**")
-# data_editor imi permite sa editez tabelul direct din pagina web!
-edited_df = st.data_editor(df_input_initial.style.apply(coloreaza_input, axis=None), use_container_width=True) 
+
+# Parametrul "key" blocheaza resetarea tabelului cand dam click pe el
+edited_df = st.data_editor(
+    st.session_state.tabel_date.style.apply(coloreaza_input, axis=None), 
+    use_container_width=True,
+    key="editor_problema"
+) 
 
 # Extrag valorile din tabelul editat pt calcule
 C_input = edited_df.iloc[:-1, :-1].values.astype(float)         
 A_input = edited_df.iloc[:-1, -1].values.astype(float).tolist() 
-B_input = edited_df.iloc[-1, :-1].values.astype(float).tolist() 
+B_input = edited_df.iloc[-1, :-1].values.astype(float).tolist()
 
 # Cand apasam butonul incepe MAGIA
 if st.button("🚀 Rezolvă Problema Pas cu Pas", type="primary", use_container_width=True):
