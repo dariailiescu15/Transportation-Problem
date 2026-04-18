@@ -35,6 +35,7 @@ st.markdown("""
 """, unsafe_allow_html=True)                                    # design css pt titlu si fundite
 
 def afiseaza_fundite_baby_pink():                               # functie care genereaza 50 de fundite zburatoare
+    # Am impachetat totul intr-un div de 0x0 pixeli ca sa blocam complet orice fel de derulare (scroll) a ecranului
     bows_html = "<div style='position: fixed; top: 0; left: 0; width: 0px; height: 0px; pointer-events: none; z-index: 99999; overflow: visible;'>"
     for _ in range(50):
         left = random.randint(0, 100)
@@ -45,17 +46,15 @@ def afiseaza_fundite_baby_pink():                               # functie care g
     bows_html += "</div>"
     st.markdown(bows_html, unsafe_allow_html=True)
 
-def fmt(val):                                                   # functie STILIZATA pt a scapa de erorile de np.float64 din LaTeX!!
+def fmt(val):                                                   # curatam numerele de formatul urat np.float64 pt LaTeX
     if pd.isna(val) or val is None: return ""
-    if isinstance(val, (np.floating, float)):
-        return str(int(val)) if val.is_integer() else f"{val:.2f}"
+    if isinstance(val, (np.floating, float, int)):
+        return str(int(val)) if float(val).is_integer() else f"{val:.2f}"
     return str(val)
 
-def afiseaza_tabel_x(X, m, n, baza=None):                       # functie generica pt a afisa tabelul X la orice pas
+def afiseaza_tabel_x(X, m, n, baza=None):                       # functie pentru afisarea tabelului X la fiecare iteratie
     df = pd.DataFrame(X, index=[f"A{i+1}" for i in range(m)], columns=[f"B{j+1}" for j in range(n)])
-    df = df.astype(object)
-    for col in df.columns:
-        df[col] = df[col].apply(lambda x: int(x) if pd.notna(x) and str(x).replace('.','',1).isdigit() and float(x).is_integer() else x)
+    df = df.astype(object).map(fmt)
         
     def coloreaza_baza(data):
         stiler = pd.DataFrame('', index=data.index, columns=data.columns)
@@ -63,23 +62,31 @@ def afiseaza_tabel_x(X, m, n, baza=None):                       # functie generi
             for (i, j) in baza:
                 stiler.iloc[i, j] = 'background-color: #fddde6; font-weight: bold; color: #ff007f;'
         return stiler
-    st.dataframe(df.style.apply(coloreaza_baza, axis=None))
+    st.dataframe(df.style.map(lambda x: '').apply(coloreaza_baza, axis=None))
 
-def afiseaza_tabel_final(X, A, B, baza=None):                   # afiseaza tabelul final curat
+def afiseaza_tabel_final(X, A, B, baza=None):                   # afiseaza tabelul final
     m, n = len(A), len(B)
     df = pd.DataFrame(X, index=[f"A{i+1}" for i in range(m)], columns=[f"B{j+1}" for j in range(n)])
     df['Disp. (a_i)'] = [fmt(x) for x in A]                                  
     df.loc['Necesar (b_j)'] = [fmt(x) for x in B] + [fmt(sum(A))]                
     
+    # transformam totul in string curat pt a nu mai aparea .00000
+    df = df.map(fmt)
+
     def coloreaza_mixt(data):                                   # functia de design finala
         stiler = pd.DataFrame('', index=data.index, columns=data.columns)
+        
+        # 1. Pastram ROZ pentru celulele de baza din interiorul matricei
         if baza is not None:
             for (i, j) in baza:
                 stiler.iloc[i, j] = 'background-color: #fddde6; font-weight: bold; color: #ff007f;'
+                
+        # 2. Facem VERDE doar marginile (linia b_j si coloana a_i)
         stiler.iloc[-1, :] = 'background-color: #d4edda; font-weight: bold; color: #155724; border-top: 2px solid #28a745;'
         stiler.iloc[:, -1] = 'background-color: #d4edda; font-weight: bold; color: #155724; border-left: 2px solid #28a745;'
         stiler.iloc[-1, -1] = 'background-color: #28a745; color: white; font-weight: bold;'
         return stiler
+
     st.dataframe(df.style.apply(coloreaza_mixt, axis=None), use_container_width=True)
 
                                                                 # ALGORITMI PROBLEMA TRANSPORTURILOR
@@ -98,7 +105,7 @@ def echilibreaza_problema(C, A, B):                             # pas 1: verific
         return C_echil, A_echil, B_echil, "Furnizor Fictiv A*"
     return C_echil, A_echil, B_echil, "Echilibrată"
 
-def coltul_nv(A, B):                                            # pas 2: calculam prima baza prin metoda Coltului N-V
+def coltul_nv(A, B):                                            # pas 2: calculam prima baza prin metoda Coltului Nord-Vest
     m, n = len(A), len(B)
     X = np.zeros((m, n))
     baza, a_temp, b_temp = [], list(A), list(B)
@@ -111,7 +118,8 @@ def coltul_nv(A, B):                                            # pas 2: calcula
         a_temp[i] -= minim
         b_temp[j] -= minim
         
-        if a_temp[i] == 0 and b_temp[j] == 0:                   # solutie pt degenerare direct din algoritm
+        # tratam DEGENERAREA corect fara a pierde celule de baza!
+        if a_temp[i] == 0 and b_temp[j] == 0:                   
             if j < n - 1: j += 1
             elif i < m - 1: i += 1
             else: break
@@ -119,9 +127,9 @@ def coltul_nv(A, B):                                            # pas 2: calcula
         else: j += 1
     return X, baza
 
-def calculeaza_potentiale(C, baza, m, n):                       # metoda potentialelor ui + vj = cij
+def calculeaza_potentiale(C, baza, m, n):                       # metoda potentialelor ui + vj = cij pentru celulele din baza
     u, v = [None] * m, [None] * n
-    u[0] = 0                                                    # fixam u1=0 (sistem compatibil nedeterminat)
+    u[0] = 0                                                    # sistem nedeterminat -> fixam intotdeauna u1=0
     
     schimbare = True                                            
     while (None in u or None in v) and schimbare:
@@ -134,21 +142,21 @@ def calculeaza_potentiale(C, baza, m, n):                       # metoda potenti
                 u[i] = C[i, j] - v[j]
                 schimbare = True
                 
-    for i in range(m):
+    for i in range(m):                                          # siguranta in caz extrem
         if u[i] is None: u[i] = 0
     for j in range(n):
         if v[j] is None: v[j] = 0
     return u, v
 
-def calculeaza_delta(C, u, v, m, n):                            # calculam costurile modificate (C tilde) si ecarturile (Delta)
+def calculeaza_delta(C, u, v, m, n):                            # calculam costurile indirecte
     Delta, C_tilde = np.zeros((m, n)), np.zeros((m, n))
     for i in range(m):
         for j in range(n):
-            C_tilde[i, j] = u[i] + v[j]                         
-            Delta[i, j] = C[i, j] - C_tilde[i, j]               
+            C_tilde[i, j] = u[i] + v[j]                         # costul modificat 
+            Delta[i, j] = C[i, j] - C_tilde[i, j]               # ecartul care ne arata daca am ajuns la optim
     return C_tilde, Delta
 
-def gaseste_ciclu(celule_baza, start):                          # cautam traseul (+, -, +, -) ca in seminar
+def gaseste_ciclu(celule_baza, start):                          # cautam traseul in forma de poligon (+, -, +, -)
     def cauta_drum(nod_curent, drum, e_orizontal):
         for urmator in celule_baza:
             if urmator != nod_curent:
@@ -197,7 +205,7 @@ rows = [f"A{i+1}" for i in range(m_surse)] + ["Cerere (b_j)"]
 
 df_input_initial = pd.DataFrame(index=rows, columns=cols)       
 
-# Datele default initiale fix din Ex 1
+# Datele default initiale
 C_curs = [[1, 3, 2, 4], [3, 1, 2, 2], [2, 3, 2, 1]]
 A_curs = [30, 39, 21]
 B_curs = [25, 20, 30, 15]
@@ -216,14 +224,14 @@ for j in range(n_dest):
         
 df_input_initial.iloc[-1, -1] = None                            
 
-def coloreaza_input(data):                                      # Delimitam Oferta/Cererea vizual
+def coloreaza_input(data):                                      # Delimitam Oferta/Cererea in tabelul de date initiale
     stiler = pd.DataFrame('', index=data.index, columns=data.columns)
     stiler.iloc[-1, :] = 'background-color: #f0f2f6; font-weight: bold; border-top: 2px solid #555;'
     stiler.iloc[:, -1] = 'background-color: #f0f2f6; font-weight: bold; border-left: 2px solid #555;'
     stiler.iloc[-1, -1] = 'background-color: #e0e4eb;'          
     return stiler
 
-st.write("**Introduceți Costurile Unitare ($C_{ij}$), Oferta și Cererea:**")
+st.write("**Introduceți Costurile Unitare ($C_{ij}$), Oferta și Cererea în tabelul de mai jos:**")
 edited_df = st.data_editor(df_input_initial.style.apply(coloreaza_input, axis=None), use_container_width=True) 
 
 C_input = edited_df.iloc[:-1, :-1].values.astype(float)         
@@ -232,10 +240,10 @@ B_input = edited_df.iloc[-1, :-1].values.astype(float).tolist()
 
 if st.button("🚀 Rezolvă Problema Pas cu Pas", type="primary", use_container_width=True):
     
-    afiseaza_fundite_baby_pink()                                # <3
+    afiseaza_fundite_baby_pink()                                # Funditele cad
     st.divider()
     
-                                                                # PAS 1: ECHILIBRUL (Pagina 1-2 din Seminar)
+                                                                # PAS 1: VERIFICARE ECHILIBRU
     st.markdown("<h3 style='color: #ff007f;'>Pasul 1. Verificăm dacă avem PTE</h3>", unsafe_allow_html=True)
     C_lucru, A_lucru, B_lucru, status = echilibreaza_problema(C_input, A_input, B_input)
     
@@ -245,11 +253,11 @@ if st.button("🚀 Rezolvă Problema Pas cu Pas", type="primary", use_container_
     if status == "Echilibrată": 
         st.latex(r"\Sigma D = \Sigma N \Rightarrow \text{avem PTE}")
     else: 
-        st.warning(f"⚠️ $\Sigma D \neq \Sigma N$. Se introduce un **{status}** cu costuri de transport $C_{{ij}} = 0$.")
+        st.warning(rf"⚠️ $\Sigma D \neq \Sigma N$. Se introduce un **{status}** cu costuri de transport $c_{{ij}} = 0$.")
     
     m, n = len(A_lucru), len(B_lucru)
 
-                                                                # PAS 2: SOLUTIA INITIALA (Pagina 3-4 din Seminar)
+                                                                # PAS 2: SOLUTIA INITIALA
     st.markdown("<h3 style='color: #ff007f;'>Pasul 2. Metoda Colțului N-V</h3>", unsafe_allow_html=True)
     st.write("Aplicăm metoda Colțului N-V și completăm tabelul $T_0$:")
     
@@ -265,60 +273,55 @@ if st.button("🚀 Rezolvă Problema Pas cu Pas", type="primary", use_container_
     else: 
         st.error(r"$NC < V \Rightarrow$ soluție **degenerată**. S-au adăugat alocări de 0 pentru perturbare ($\epsilon$).")
 
-    # Calculul costului f0 (Pagina 6 din Seminar)
     cost_curent = np.sum(X_baza * C_lucru)
-    formule_f0 = [f"{fmt(C_lucru[i,j])} \cdot {fmt(X_baza[i,j])}" for (i,j) in celule_baza]
-    st.latex(r"f_0 = f_{min}(X^0) = \sum c_{ij} \cdot X_{ij} = " + " + ".join(formule_f0) + f" = {fmt(cost_curent)}")
+    formule_f0 = [rf"{fmt(C_lucru[i,j])} \cdot {fmt(X_baza[i,j])}" for (i,j) in celule_baza]
+    st.latex(r"f_0 = f_{min}(X^0) = \sum c_{ij} \cdot X_{ij} = " + " + ".join(formule_f0) + rf" = {fmt(cost_curent)}")
 
-                                                                # PAS 3: ALGORITMUL MODI (Pagina 6-10 din Seminar)
+                                                                # PAS 3: ALGORITMUL MODI
     st.divider()
     st.markdown("<h3 style='color: #ff007f;'>Pasul 3. Aplicăm TO (Testul de Optimalitate)</h3>", unsafe_allow_html=True)
     
     iteratie, max_iter = 0, 15                                  
     
     while iteratie < max_iter:
-        st.markdown(f"<h4 style='color: #333;'>Iterația $I_{iteratie} (T_{iteratie}, X_{iteratie}, f_{iteratie})$</h4>", unsafe_allow_html=True)
+        st.markdown(rf"#### Iterația $I_{{{iteratie}}}$ ($T_{{{iteratie}}}$, $X_{{{iteratie}}}$, $f_{{{iteratie}}}$)")
         
-        # Pagina 6: Sistemul S
         u, v = calculeaza_potentiale(C_lucru, celule_baza, m, n)
         
         col1, col2 = st.columns([1, 2])
         with col1:
-            st.write("① Sistemul $S: u_i + v_j = c_{ij}$")
+            st.markdown(r"**① Sistemul $S: u_i + v_j = c_{ij}$**")
             sistem_latex = r"\begin{cases} "
             for (i, j) in celule_baza:
-                sistem_latex += rf"u_{i+1} + v_{j+1} = {fmt(C_lucru[i,j])} \\ "
+                sistem_latex += rf"u_{{{i+1}}} + v_{{{j+1}}} = {fmt(C_lucru[i,j])} \\ "
             sistem_latex += r"\end{cases}"
             st.latex(sistem_latex)
         
         with col2:
-            st.write(rf"Alegem $u_1 = 0 \Rightarrow$")
+            st.markdown(r"**Alegem $u_1 = 0 \Rightarrow$**")
             rez_latex = r"\begin{cases} "
-            for i in range(m): rez_latex += rf"u_{i+1} = {fmt(u[i])} \\ "
-            for j in range(n): rez_latex += rf"v_{j+1} = {fmt(v[j])} \\ "
+            for i in range(m): rez_latex += rf"u_{{{i+1}}} = {fmt(u[i])} \\ "
+            for j in range(n): rez_latex += rf"v_{{{j+1}}} = {fmt(v[j])} \\ "
             rez_latex += r"\end{cases}"
             st.latex(rez_latex)
 
-        # Pagina 7-8: Tabelele C tilde si Delta
         C_tilde, Delta = calculeaza_delta(C_lucru, u, v, m, n)
         
         col3, col4 = st.columns(2)
         with col3:
-            st.write("② Tabel $\tilde{C} \Rightarrow \tilde{C}_{ij} = u_i + v_j$")
+            st.markdown(r"**② Tabel $\tilde{C} \Rightarrow \tilde{C}_{ij} = u_i + v_j$**")
             df_ctilde = pd.DataFrame(C_tilde, index=[f"{fmt(u[i])}=u{i+1}" for i in range(m)], columns=[f"v{j+1}={fmt(v[j])}" for j in range(n)])
-            st.dataframe(df_ctilde.astype(object).applymap(fmt))
+            st.dataframe(df_ctilde.astype(object).map(fmt))
             
         with col4:
-            st.write("③ Tabel $\Delta \Rightarrow \delta_{ij} = C_{ij} - \tilde{C}_{ij}$")
+            st.markdown(r"**③ Tabel $\Delta \Rightarrow \delta_{ij} = C_{ij} - \tilde{C}_{ij}$**")
             df_delta = pd.DataFrame(Delta, index=[f"A{i+1}" for i in range(m)], columns=[f"B{j+1}" for j in range(n)])
             
-            # Highlight celulele cu cost indirect negativ
             def style_delta(val):
                 if val < 0: return 'background-color: #ffcccc; color: red; font-weight: bold;'
                 return ''
-            st.dataframe(df_delta.style.applymap(style_delta))
+            st.dataframe(df_delta.style.map(style_delta))
 
-        # Pagina 8: Decizia STOP sau Continuam
         este_optim, min_delta, intrata = True, 0, None
         for i in range(m):
             for j in range(n):
@@ -328,13 +331,12 @@ if st.button("🚀 Rezolvă Problema Pas cu Pas", type="primary", use_container_
                     este_optim = False
                     
         if este_optim:
-            st.success(r"④ $TO: \forall \delta_{ij} \ge 0 \Rightarrow DA \Rightarrow STOP \Rightarrow I_{STOP} = I_{" + str(iteratie) + r"} \Rightarrow$ soluția optimă!")
+            st.success(r"**④ $TO: \forall \delta_{ij} \ge 0 \Rightarrow DA \Rightarrow STOP \Rightarrow I_{STOP} = I_{" + str(iteratie) + r"} \Rightarrow$ soluția optimă!**")
             break
             
-        st.warning(rf"④ $TO: \forall \delta_{ij} \ge 0 \Rightarrow NU \Rightarrow$ o altă iterație. $\min(\delta_{{ij}} < 0) = \delta_{{{intrata[0]+1}{intrata[1]+1}}} = {fmt(min_delta)}$")
+        st.warning(rf"**④ $TO: \forall \delta_{ij} \ge 0 \Rightarrow NU \Rightarrow$ o altă iterație.** $\min(\delta_{{ij}} < 0) = \delta_{{{intrata[0]+1}{intrata[1]+1}}} = {fmt(min_delta)}$")
         
-        # Pagina 9: Circuitul
-        st.write(rf"**Circuit $\Rightarrow$ se completează în tabelul $T_{iteratie}$ celula $({intrata[0]+1}, {intrata[1]+1})$ cu valoarea $\theta$**")
+        st.write(rf"**Circuit $\Rightarrow$ se completează în tabelul $T_{{{iteratie}}}$ celula $({intrata[0]+1}, {intrata[1]+1})$ cu valoarea $\theta$**")
         circuit = gaseste_ciclu(celule_baza + [intrata], intrata)
         
         sir_circuit = " $\\rightarrow$ ".join([rf"({r+1},{c+1})^{{{'+' if i%2==0 else '-'}}}" for i, (r, c) in enumerate(circuit)])
@@ -346,11 +348,9 @@ if st.button("🚀 Rezolvă Problema Pas cu Pas", type="primary", use_container_
         
         st.latex(rf"\theta = \min \{{X_{{ij}}^{{-}}\}} = \min \{{ " + ", ".join([fmt(X_baza[r,c]) for (r,c) in celule_minus]) + rf" \}} = {fmt(theta)}")
         
-        # Pagina 10: Calcul Cost Nou
         cost_nou = cost_curent + min_delta * theta
         st.latex(rf"f_{{{iteratie+1}}} = f_{{{iteratie}}} + \delta_{{{intrata[0]+1}{intrata[1]+1}}} \cdot X_{{{intrata[0]+1}{intrata[1]+1}}} = {fmt(cost_curent)} + ({fmt(min_delta)}) \cdot {fmt(theta)} = {fmt(cost_nou)}")
         
-        # Actualizam matricea in spate pentru pasul urmator
         semn = 1
         for (r, c) in circuit:                                  
             X_baza[r, c] += semn * theta
@@ -363,13 +363,12 @@ if st.button("🚀 Rezolvă Problema Pas cu Pas", type="primary", use_container_
         st.markdown("---")
         iteratie += 1
 
-                                                                # PAS 4: INTERPRETARE FINALA (Pagina 11 din Seminar)
+                                                                # AFISARE REZULTAT FINAL
     st.markdown("<h3 style='color: #ff007f; text-align: center;'>📦 SOLUȚIA FINALĂ 📦</h3>", unsafe_allow_html=True)
     
     afiseaza_tabel_final(X_baza, A_lucru, B_lucru, celule_baza)
     st.markdown(f"<h2 style='color: #ff007f; text-align: center;'>Cost Total Minim: {fmt(cost_curent)} u.m.</h2>", unsafe_allow_html=True)
     
-    # Interpretare textuala simpatica si utila
     st.write("💡 **Interpretare Managerială (Plan de Transport):**")
     for j in range(n):
         surse = []
