@@ -161,7 +161,7 @@ Read the final allocation table and the managerial transportation plan at the bo
 
 ## License
 
-© 2026 — , Iliescu D., Lungu D., Dedu A., Dumitrescu A.
+© 2026 — Iliescu D., Lungu D., Dedu A., Dumitrescu A.
 
 Operations Research — Faculty of Applied Sciences.  
 Developed for academic purposes. Use of the code for educational purposes is permitted with **proper attribution to the authors**.
